@@ -1,0 +1,575 @@
+"""
+CyberStudy - Backend Flask
+Sistema de pesquisa sobre Cybercondria e Tomada de Decisão
+"""
+
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
+import os
+import uuid
+import json
+from user_agents import parse
+import requests
+
+# Inicializar Flask
+app = Flask(__name__)
+CORS(app)
+
+# Configuração do banco de dados
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cyberstudy.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# ===== MODELOS DO BANCO DE DADOS =====
+
+class Participant(db.Model):
+    """Tabela de participantes"""
+    __tablename__ = 'participants'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), unique=True, nullable=False)
+    session_start = db.Column(db.DateTime, default=datetime.utcnow)
+    session_end = db.Column(db.DateTime)
+    duration_minutes = db.Column(db.Float)
+    user_agent = db.Column(db.String(500))
+    ip_address = db.Column(db.String(50))
+    device_type = db.Column(db.String(50))  # mobile, desktop, tablet
+    browser = db.Column(db.String(100))
+    os = db.Column(db.String(100))
+    country = db.Column(db.String(100))
+    state = db.Column(db.String(100))
+    city = db.Column(db.String(100))
+    latitude = db.Column(db.Float)
+    longitude = db.Column(db.Float)
+    status = db.Column(db.String(50), default='in_progress')  # in_progress, completed, abandoned
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class SociodemographicData(db.Model):
+    """Tabela de dados sociodemográficos"""
+    __tablename__ = 'sociodemographic_data'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    age = db.Column(db.Integer)
+    gender = db.Column(db.String(50))  # masculino, feminino, outro
+    education = db.Column(db.String(100))
+    occupation = db.Column(db.String(100))
+    marital_status = db.Column(db.String(50))
+    monthly_income = db.Column(db.String(100))
+    internet_hours = db.Column(db.Integer)
+    chronic_condition = db.Column(db.String(100))
+    psychiatric_diagnosis = db.Column(db.String(100))
+    medications = db.Column(db.Boolean)
+    health_search_frequency = db.Column(db.String(50))
+    healthcare_access = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class BAIResponse(db.Model):
+    """Tabela de respostas do BAI (Beck Anxiety Inventory)"""
+    __tablename__ = 'bai_responses'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    responses = db.Column(db.JSON)  # {item_1: 0, item_2: 1, ...}
+    total_score = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CSS12Response(db.Model):
+    """Tabela de respostas da CSS-12 (Cyberchondria Severity Scale)"""
+    __tablename__ = 'css12_responses'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    responses = db.Column(db.JSON)  # {item_1: 0, item_2: 1, ...}
+    total_score = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CSS33Response(db.Model):
+    """Tabela de respostas da CSS-33 - Silva et al. (2016)"""
+    __tablename__ = 'css33_responses'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    responses = db.Column(db.JSON)  # {item_1: 0, ..., item_33: 4}
+    total_score = db.Column(db.Integer)
+    # Subescalas (Fergus, 2014)
+    score_compulsion = db.Column(db.Integer)   # Compulsão: itens 1,2,5,13,18,29,31
+    score_distress = db.Column(db.Integer)     # Sofrimento: itens 7,10,22,32
+    score_excess = db.Column(db.Integer)       # Excessividade: itens 3,6,8,12,14,17,24,25
+    score_reassurance = db.Column(db.Integer)  # Busca de reassurance: itens 4,15,16,26
+    score_distrust = db.Column(db.Integer)     # Desconfiança médica: itens 9,19,28,30,33
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class GSEResponse(db.Model):
+    """Tabela de respostas da GSE (General Self-Efficacy Scale)"""
+    __tablename__ = 'gse_responses'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    responses = db.Column(db.JSON)  # {item_1: 1, item_2: 2, ...}
+    total_score = db.Column(db.Integer)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class IGTSummary(db.Model):
+    """Tabela de resumo do IGT (Iowa Gambling Task)"""
+    __tablename__ = 'igt_summary'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    total_trials = db.Column(db.Integer, default=100)
+    final_balance = db.Column(db.Float)
+    net1 = db.Column(db.Float)  # Trials 1-20
+    net2 = db.Column(db.Float)  # Trials 21-40
+    net3 = db.Column(db.Float)  # Trials 41-60
+    net4 = db.Column(db.Float)  # Trials 61-80
+    net5 = db.Column(db.Float)  # Trials 81-100
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class IGTTrial(db.Model):
+    """Tabela de tentativas individuais do IGT"""
+    __tablename__ = 'igt_trials'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    participant_id = db.Column(db.String(36), db.ForeignKey('participants.participant_id'))
+    trial_number = db.Column(db.Integer)
+    deck_chosen = db.Column(db.String(1))  # A, B, C, D
+    gain = db.Column(db.Float)
+    loss = db.Column(db.Float)
+    net_gain = db.Column(db.Float)
+    running_total = db.Column(db.Float)
+    response_time = db.Column(db.Float)  # em milissegundos
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+# ===== FUNÇÕES AUXILIARES =====
+
+def get_client_ip():
+    """Obter IP do cliente"""
+    if request.environ.get('HTTP_CF_CONNECTING_IP'):
+        return request.environ.get('HTTP_CF_CONNECTING_IP')
+    return request.remote_addr
+
+def parse_user_agent():
+    """Parse do user-agent para extrair informações do dispositivo"""
+    ua_string = request.headers.get('User-Agent', '')
+    user_agent = parse(ua_string)
+    
+    return {
+        'user_agent': ua_string,
+        'device_type': 'mobile' if user_agent.is_mobile else ('tablet' if user_agent.is_tablet else 'desktop'),
+        'browser': str(user_agent.browser.family),
+        'os': str(user_agent.os.family),
+    }
+
+def get_geolocation(ip_address):
+    """Obter geolocalização baseada no IP"""
+    try:
+        response = requests.get(f'https://ipapi.co/{ip_address}/json/')
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                'country': data.get('country_name'),
+                'state': data.get('region'),
+                'city': data.get('city'),
+                'latitude': data.get('latitude'),
+                'longitude': data.get('longitude'),
+            }
+    except:
+        pass
+    return {}
+
+# ===== ROTAS DA API =====
+
+@app.route('/api/study/initialize-session', methods=['POST'])
+def initialize_session():
+    """Inicializar nova sessão de estudo"""
+    try:
+        participant_id = str(uuid.uuid4())
+        
+        # Parse user-agent
+        ua_info = parse_user_agent()
+        
+        # Obter IP
+        ip_address = get_client_ip()
+        
+        # Obter geolocalização
+        geo_info = get_geolocation(ip_address)
+        
+        # Criar participante
+        participant = Participant(
+            participant_id=participant_id,
+            user_agent=ua_info['user_agent'],
+            ip_address=ip_address,
+            device_type=ua_info['device_type'],
+            browser=ua_info['browser'],
+            os=ua_info['os'],
+            country=geo_info.get('country'),
+            state=geo_info.get('state'),
+            city=geo_info.get('city'),
+            latitude=geo_info.get('latitude'),
+            longitude=geo_info.get('longitude'),
+        )
+        
+        db.session.add(participant)
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'participantId': participant_id,
+            'sessionStart': participant.session_start.isoformat(),
+        }), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-consent/<participant_id>', methods=['POST'])
+def save_consent(participant_id):
+    """Salvar consentimento"""
+    try:
+        data = request.json
+        participant = Participant.query.filter_by(participant_id=participant_id).first()
+        
+        if not participant:
+            return jsonify({'success': False, 'error': 'Participant not found'}), 404
+        
+        # Aqui você pode adicionar campos de consentimento se necessário
+        db.session.commit()
+        
+        return jsonify({'success': True}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-sociodemographic/<participant_id>', methods=['POST'])
+def save_sociodemographic(participant_id):
+    """Salvar dados sociodemográficos"""
+    try:
+        data = request.json
+        
+        socio = SociodemographicData(
+            participant_id=participant_id,
+            age=data.get('age'),
+            gender=data.get('gender'),
+            education=data.get('education'),
+            occupation=data.get('occupation'),
+            marital_status=data.get('maritalStatus'),
+            monthly_income=data.get('monthlyIncome'),
+            internet_hours=data.get('internetHours'),
+            chronic_condition=data.get('chronicCondition'),
+            psychiatric_diagnosis=data.get('psychiatricDiagnosis'),
+            medications=data.get('medications') == 'sim',
+            health_search_frequency=data.get('healthSearchFrequency'),
+            healthcare_access=data.get('healthcareAccess'),
+        )
+        
+        db.session.add(socio)
+        db.session.commit()
+        
+        return jsonify({'success': True}), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-bai/<participant_id>', methods=['POST'])
+def save_bai(participant_id):
+    """Salvar respostas do BAI"""
+    try:
+        data = request.json
+        responses = data.get('responses', {})
+        total_score = sum(int(v) for v in responses.values() if isinstance(v, (int, str)))
+        
+        bai = BAIResponse(
+            participant_id=participant_id,
+            responses=responses,
+            total_score=total_score,
+        )
+        
+        db.session.add(bai)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'totalScore': total_score}), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-css12/<participant_id>', methods=['POST'])
+def save_css12(participant_id):
+    """Salvar respostas da CSS-12"""
+    try:
+        data = request.json
+        responses = data.get('responses', {})
+        total_score = sum(int(v) for v in responses.values() if isinstance(v, (int, str)))
+        
+        css12 = CSS12Response(
+            participant_id=participant_id,
+            responses=responses,
+            total_score=total_score,
+        )
+        
+        db.session.add(css12)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'totalScore': total_score}), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-gse/<participant_id>', methods=['POST'])
+def save_gse(participant_id):
+    """Salvar respostas da GSE"""
+    try:
+        data = request.json
+        responses = data.get('responses', {})
+        total_score = sum(int(v) for v in responses.values() if isinstance(v, (int, str)))
+        
+        gse = GSEResponse(
+            participant_id=participant_id,
+            responses=responses,
+            total_score=total_score,
+        )
+        
+        db.session.add(gse)
+        db.session.commit()
+        
+        return jsonify({'success': True, 'totalScore': total_score}), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/save-igt/<participant_id>', methods=['POST'])
+def save_igt(participant_id):
+    """Salvar dados do IGT"""
+    try:
+        data = request.json
+        trials = data.get('trials', [])
+        final_balance = data.get('finalBalance', 0)
+        
+        # Calcular nets
+        net1 = sum(t['netGain'] for t in trials if 1 <= t['trialNumber'] <= 20)
+        net2 = sum(t['netGain'] for t in trials if 21 <= t['trialNumber'] <= 40)
+        net3 = sum(t['netGain'] for t in trials if 41 <= t['trialNumber'] <= 60)
+        net4 = sum(t['netGain'] for t in trials if 61 <= t['trialNumber'] <= 80)
+        net5 = sum(t['netGain'] for t in trials if 81 <= t['trialNumber'] <= 100)
+        
+        # Salvar resumo
+        igt_summary = IGTSummary(
+            participant_id=participant_id,
+            total_trials=len(trials),
+            final_balance=final_balance,
+            net1=net1,
+            net2=net2,
+            net3=net3,
+            net4=net4,
+            net5=net5,
+        )
+        
+        db.session.add(igt_summary)
+        
+        # Salvar tentativas individuais
+        for trial in trials:
+            igt_trial = IGTTrial(
+                participant_id=participant_id,
+                trial_number=trial['trialNumber'],
+                deck_chosen=trial['deckChosen'],
+                gain=trial['gain'],
+                loss=trial['loss'],
+                net_gain=trial['netGain'],
+                running_total=trial['runningTotal'],
+                response_time=trial.get('responseTime', 0),
+            )
+            db.session.add(igt_trial)
+        
+        db.session.commit()
+        
+        return jsonify({'success': True}), 201
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/study/complete/<participant_id>', methods=['POST'])
+def complete_study(participant_id):
+    """Marcar estudo como completo"""
+    try:
+        participant = Participant.query.filter_by(participant_id=participant_id).first()
+        
+        if not participant:
+            return jsonify({'success': False, 'error': 'Participant not found'}), 404
+        
+        participant.session_end = datetime.utcnow()
+        participant.status = 'completed'
+        
+        # Calcular duração em minutos
+        duration = (participant.session_end - participant.session_start).total_seconds() / 60
+        participant.duration_minutes = duration
+        
+        db.session.commit()
+        
+        return jsonify({'success': True, 'durationMinutes': duration}), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/admin/metrics', methods=['GET'])
+def get_metrics():
+    """Obter métricas gerais do painel admin"""
+    try:
+        total_visits = Participant.query.count()
+        total_completed = Participant.query.filter_by(status='completed').count()
+        avg_duration = db.session.query(db.func.avg(Participant.duration_minutes)).scalar() or 0
+        
+        return jsonify({
+            'totalVisits': total_visits,
+            'totalCompleted': total_completed,
+            'completionRate': (total_completed / total_visits * 100) if total_visits > 0 else 0,
+            'averageDuration': round(avg_duration, 2),
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/participants', methods=['GET'])
+def get_participants():
+    """Obter lista de participantes"""
+    try:
+        participants = Participant.query.all()
+        data = []
+        
+        for p in participants:
+            data.append({
+                'participantId': p.participant_id,
+                'deviceType': p.device_type,
+                'browser': p.browser,
+                'os': p.os,
+                'state': p.state,
+                'gender': '',  # Buscar de sociodemographic_data
+                'status': p.status,
+                'duration': p.duration_minutes,
+                'createdAt': p.created_at.isoformat(),
+            })
+        
+        return jsonify(data), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/study/save-css33/<participant_id>', methods=['POST'])
+def save_css33(participant_id):
+    """Salvar respostas da CSS-33 (Silva et al., 2016)"""
+    try:
+        data = request.get_json()
+        responses = data.get('responses', {})
+
+        # Calcular escore total (0-132)
+        total_score = sum(responses.values())
+
+        # Calcular subescalas conforme Fergus (2014)
+        def sub(items):
+            return sum(responses.get(f'item_{i}', 0) for i in items)
+
+        compulsion  = sub([1,2,5,13,18,29,31])
+        distress    = sub([7,10,22,32])
+        excess      = sub([3,6,8,12,14,17,24,25])
+        reassurance = sub([4,15,16,26])
+        distrust    = sub([9,19,28,30,33])
+
+        css33 = CSS33Response(
+            participant_id=participant_id,
+            responses=responses,
+            total_score=total_score,
+            score_compulsion=compulsion,
+            score_distress=distress,
+            score_excess=excess,
+            score_reassurance=reassurance,
+            score_distrust=distrust
+        )
+        db.session.add(css33)
+        db.session.commit()
+        return jsonify({'success': True, 'total_score': total_score}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/admin/export/<table_name>', methods=['GET'])
+def export_data(table_name):
+    """Exportar dados em CSV ou JSON"""
+    import csv, io
+    from flask import Response
+
+    try:
+        format_type = request.args.get('format', 'json')
+
+        table_map = {
+            'participants': Participant,
+            'sociodemographic': SociodemographicData,
+            'bai': BAIResponse,
+            'css12': CSS12Response,
+            'css33': CSS33Response,
+            'gse': GSEResponse,
+            'igt_summary': IGTSummary,
+            'igt_trials': IGTTrial,
+        }
+
+        if table_name not in table_map:
+            return jsonify({'error': 'Tabela inválida. Opções: ' + ', '.join(table_map.keys())}), 400
+
+        table = table_map[table_name]
+        records = table.query.all()
+        columns = [col.name for col in table.__table__.columns]
+
+        if format_type == 'csv':
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                row = {}
+                for col in columns:
+                    val = getattr(record, col)
+                    # Serializar JSON como string para o CSV
+                    row[col] = json.dumps(val, ensure_ascii=False) if isinstance(val, (dict, list)) else val
+                writer.writerow(row)
+            output.seek(0)
+            return Response(
+                output.getvalue(),
+                mimetype='text/csv',
+                headers={'Content-Disposition': f'attachment; filename={table_name}.csv'}
+            )
+        else:
+            data = []
+            for record in records:
+                data.append({col: getattr(record, col) for col in columns})
+            return jsonify(data), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== ROTAS ESTÁTICAS =====
+
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend')
+
+@app.route('/')
+def index():
+    return send_from_directory(FRONTEND_DIR, 'index.html')
+
+@app.route('/<path:filename>')
+def serve_static(filename):
+    return send_from_directory(FRONTEND_DIR, filename)
+
+
+# ===== INICIALIZAÇÃO =====
+
+if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_ENV') == 'development'
+    app.run(debug=debug, host='0.0.0.0', port=port)

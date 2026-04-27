@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSS-33 - CyberStudy</title>
+    <link rel="stylesheet" href="../css/style.css">
+    <style>
+        .scale-header { margin-bottom: 1.5rem; }
+        .scale-header p { color: #555; font-size: 0.95rem; line-height: 1.6; }
+        .likert-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 0.25rem;
+            padding: 0 2px;
+        }
+        .item-block {
+            background: #f9f9fb;
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+            border: 1px solid #e8e8f0;
+        }
+        .item-block:has(input:checked) {
+            border-color: #6c63ff;
+            background: #f3f2ff;
+        }
+        .item-text {
+            font-size: 0.93rem;
+            margin-bottom: 0.6rem;
+            color: #222;
+            line-height: 1.5;
+        }
+        .item-number {
+            font-weight: 700;
+            color: #6c63ff;
+            margin-right: 0.4rem;
+        }
+        .likert-options {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+        }
+        .likert-option {
+            flex: 1;
+            text-align: center;
+        }
+        .likert-option input[type="radio"] {
+            display: none;
+        }
+        .likert-option label {
+            display: block;
+            padding: 6px 2px;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            cursor: pointer;
+            font-size: 0.72rem;
+            color: #555;
+            background: white;
+            transition: all 0.15s;
+            min-height: 52px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .likert-option label span.val {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #888;
+        }
+        .likert-option input:checked + label {
+            background: #6c63ff;
+            border-color: #6c63ff;
+            color: white;
+        }
+        .likert-option input:checked + label span.val { color: white; }
+        .likert-option label:hover { border-color: #6c63ff; }
+        .progress-counter {
+            text-align: right;
+            font-size: 0.82rem;
+            color: #888;
+            margin-bottom: 0.75rem;
+        }
+        .btn-nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1.5rem;
+        }
+        .error-msg {
+            color: #dc3545;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 50%;"></div>
+        </div>
+
+        <div class="card">
+            <div class="scale-header">
+                <h2>Escala de Severidade da Cybercondria (CSS-33)</h2>
+                <p>
+                    Abaixo estão afirmações sobre o uso da internet para buscar informações de saúde.
+                    Indique com que <strong>frequência</strong> cada afirmação se aplica a você,
+                    considerando os <strong>últimos 3 meses</strong>.
+                </p>
+                <p style="font-size:0.82rem; color:#888;">
+                    Fonte: Silva et al. (2016). <em>Trends Psychiatry Psychother</em>, 38(2):90-95.
+                </p>
+            </div>
+
+            <div class="likert-labels">
+                <span>Nunca</span>
+                <span>Raramente</span>
+                <span>Às vezes</span>
+                <span>Frequentemente</span>
+                <span>Sempre</span>
+            </div>
+
+            <div id="itemsContainer"></div>
+
+            <p class="error-msg" id="errorMsg">⚠️ Por favor, responda todos os itens antes de continuar.</p>
+            <p class="progress-counter" id="progressCounter">0 / 33 respondidos</p>
+
+            <div class="btn-nav">
+                <button class="btn btn-secondary" onclick="goBack()">← Voltar</button>
+                <button class="btn btn-primary" id="nextBtn" onclick="submitCSS33()">Continuar →</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../js/app.js"></script>
+    <script>
+        const items = [
+            "Se eu notar alguma sensação corporal estranha eu vou procurá-la na Internet.",
+            "Pesquiso os mesmos sintomas na Internet mais de uma vez.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi interrompe meu tempo gasto no Facebook/Twitter/outras redes sociais.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi me leva a consultar meu médico.",
+            "Eu tenho problemas para relaxar depois de pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi interrompe outras pesquisas (por exemplo, meu trabalho/tarefa da faculdade/trabalho de casa).",
+            "Eu fico mais facilmente ansioso ou irritado após pesquisar na Internet sobre os sintomas ou problemas de saúde percebidos.",
+            "Pesquisar na Internet sobre sintomas ou os possíveis problemas de saúde que percebi interrompe minhas atividades online (como por exemplo, assistir filmes).",
+            "Levo a opinião do meu médico ou profissional de saúde mais a sério do que a minha pesquisa médica na Internet.",
+            "Eu entro em pânico quando leio na Internet que um sintoma que tenho é encontrado em algum problema de saúde raro/grave.",
+            "Ao pesquisar sintomas ou problemas de saúde na Internet, visito fóruns onde os indivíduos diagnosticados ou preocupados discutem suas condições médicas, sintomas e experiências.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi em mim interrompe meu trabalho (como escrever e-mails, trabalhar em documentos do Word ou planilhas).",
+            "Eu leio diferentes páginas da Internet sobre o mesmo problema de saúde que percebi.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi interrompe minhas atividades sociais presenciais (reduz o tempo gasto com amigos/família).",
+            "Discuto minhas descobertas médicas na Internet com o meu médico/profissional de saúde.",
+            "Sugiro ao meu médico/profissional de saúde que posso precisar de um procedimento de diagnóstico sobre o qual eu li na Internet (por exemplo, uma biópsia/um exame de sangue específico).",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi me distrai da leitura de notícias/esportes/entretenimento on-line.",
+            "Eu leio as mesmas páginas da Internet sobre condições médicas percebidas em mais de uma ocasião.",
+            "Quando eu procuro um sintoma on-line, eu sinto que o ranking dos resultados de busca da Internet reflete o quão comum é uma doença, com os problemas de saúde mais prováveis aparecendo no início da página de resultados?",
+            "Eu penso estar bem até ler sobre um problema de saúde sério na Internet?",
+            "Eu visito fontes confiáveis (por exemplo, http://bvsms.saude.gov.br/) ao pesquisar os sintomas ou os possíveis problemas de saúde que percebi.",
+            "Eu me sinto mais ansioso ou estressado após pesquisar online sobre sintomas ou condições médicas percebidas.",
+            "Eu perco meu apetite depois de pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi, pois fico enjoado.",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi interrompe ou torna mais lenta a minha comunicação on-line (por exemplo, mensagens instantâneas, Skype).",
+            "Pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi interrompe minhas atividades de trabalho fora da Internet.",
+            "Pesquisar na Internet os sintomas ou os possíveis problemas de saúde que percebi me faz consultar outras especialidades médicas.",
+            "Discutir informações da Internet sobre um problema de saúde com meu médico me tranquiliza.",
+            "Eu confio mais no diagnóstico do meu médico/profissional de saúde do que em meu autodiagnóstico na Internet.",
+            "Eu acho difícil parar de me preocupar com os sintomas ou os possíveis problemas de saúde sobre os quais eu pesquisei na Internet.",
+            "Ao pesquisar sintomas ou problemas de saúde na Internet eu visito tanto os sites confiáveis quanto fóruns de usuários.",
+            "Eu tenho problemas para dormir depois de pesquisar na Internet sobre os sintomas ou os possíveis problemas de saúde que percebi, pois os resultados ficam se repetindo na minha mente.",
+            "Eu me pego pensando: \"Eu não teria ido ao médico se eu não tivesse lido sobre esse sintoma/problema de saúde na Internet\".",
+            "Quando o meu médico/profissional de saúde descarta minha pesquisa médica na Internet, eu paro de me preocupar com isso."
+        ];
+
+        const labels = [
+            { val: '0', text: 'Nunca' },
+            { val: '1', text: 'Raramente' },
+            { val: '2', text: 'Às vezes' },
+            { val: '3', text: 'Frequentemente' },
+            { val: '4', text: 'Sempre' }
+        ];
+
+        function renderItems() {
+            const container = document.getElementById('itemsContainer');
+            container.innerHTML = items.map((text, i) => {
+                const n = i + 1;
+                const opts = labels.map(l => `
+                    <div class="likert-option">
+                        <input type="radio" name="item_${n}" id="item_${n}_${l.val}" value="${l.val}">
+                        <label for="item_${n}_${l.val}">
+                            <span class="val">${l.val}</span>
+                            <span>${l.text}</span>
+                        </label>
+                    </div>`).join('');
+                return `
+                    <div class="item-block" id="block_${n}">
+                        <div class="item-text"><span class="item-number">${n}.</span>${text}</div>
+                        <div class="likert-options">${opts}</div>
+                    </div>`;
+            }).join('');
+
+            // Atualizar contador ao responder
+            document.querySelectorAll('input[type="radio"]').forEach(radio => {
+                radio.addEventListener('change', updateCounter);
+            });
+
+            // Restaurar respostas salvas
+            const saved = getFromStorage('css33_responses');
+            if (saved) {
+                Object.entries(saved).forEach(([key, val]) => {
+                    const el = document.querySelector(`input[name="${key}"][value="${val}"]`);
+                    if (el) el.checked = true;
+                });
+                updateCounter();
+            }
+        }
+
+        function updateCounter() {
+            const answered = document.querySelectorAll('input[type="radio"]:checked').length;
+            document.getElementById('progressCounter').textContent = `${answered} / 33 respondidos`;
+            document.getElementById('progressFill').style.width = `${50 + (answered / 33) * 15}%`;
+        }
+
+        function getResponses() {
+            const responses = {};
+            for (let i = 1; i <= 33; i++) {
+                const checked = document.querySelector(`input[name="item_${i}"]:checked`);
+                if (checked) responses[`item_${i}`] = parseInt(checked.value);
+            }
+            return responses;
+        }
+
+        async function submitCSS33() {
+            const responses = getResponses();
+            const unanswered = items
+                .map((_, i) => i + 1)
+                .filter(n => !(`item_${n}` in responses));
+
+            if (unanswered.length > 0) {
+                document.getElementById('errorMsg').style.display = 'block';
+                // Rolar até o primeiro item não respondido
+                document.getElementById(`block_${unanswered[0]}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                document.getElementById(`block_${unanswered[0]}`).style.borderColor = '#dc3545';
+                return;
+            }
+
+            document.getElementById('errorMsg').style.display = 'none';
+            const btn = document.getElementById('nextBtn');
+            btn.disabled = true;
+            btn.textContent = 'Salvando...';
+
+            try {
+                await saveCSS33Responses(responses);
+                window.location.href = '/pages/scales.html';
+            } catch (e) {
+                btn.disabled = false;
+                btn.textContent = 'Continuar →';
+            }
+        }
+
+        renderItems();
+    </script>
+</body>
+</html>
